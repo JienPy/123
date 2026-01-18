@@ -7,6 +7,7 @@ import { DataProvider } from "./contexts/DataContext";
 import { Layout } from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Inventory from "./pages/Inventory";
+import Orders from "./pages/Orders";
 import Sales from "./pages/Sales";
 import CategorySettings from "./pages/CategorySettings";
 import UnitSettings from "./pages/UnitSettings";
@@ -20,11 +21,12 @@ const App = () => (
       <DataProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Layout>
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/inventory" element={<Inventory />} />
+              <Route path="/orders" element={<Orders />} />
               <Route path="/sales" element={<Sales />} />
               <Route path="/settings/categories" element={<CategorySettings />} />
               <Route path="/settings/units" element={<UnitSettings />} />

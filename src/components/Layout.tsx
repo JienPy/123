@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Home, Package, ShoppingCart, Scissors, Settings, Tag, Ruler, ChevronDown } from "lucide-react";
+import { Home, Package, ClipboardList, ShoppingCart, Scissors, Settings, Tag, Ruler, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
@@ -11,6 +11,7 @@ interface LayoutProps {
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home },
   { name: "Inventory", href: "/inventory", icon: Package },
+  { name: "Orders", href: "/orders", icon: ClipboardList },
   { name: "Sales", href: "/sales", icon: ShoppingCart },
 ];
 

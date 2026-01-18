@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -19,25 +20,43 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Package, Edit, Trash2, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Plus, Package, Edit, Trash2, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Eye, Upload, X, ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useData } from "@/contexts/DataContext";
+import {
+  uploadInventoryImages,
+  fetchInventoryImages,
+  deleteInventoryImage,
+  InventoryImage,
+  InventoryItem,
+} from "@/services/directus";
 
 const ITEMS_PER_PAGE_OPTIONS = [5, 10, 20, 50];
+const MAX_IMAGES = 5;
 
 export default function Inventory() {
-  const { inventory, categories, units, addInventoryItem, deleteInventoryItem, isLoading, error } = useData();
+  const { inventory, categories, units, addInventoryItem, updateInventoryItem, deleteInventoryItem, isLoading, error } = useData();
   const [searchQuery, setSearchQuery] = useState("");
-  const [isOpen, setIsOpen] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isViewOpen, setIsViewOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [existingImages, setExistingImages] = useState<InventoryImage[]>([]);
+  const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
+  const [viewingImages, setViewingImages] = useState<InventoryImage[]>([]);
+  const [isLoadingImages, setIsLoadingImages] = useState(false);
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+
   const [formData, setFormData] = useState({
     name: "",
     category: "",
     quantity: "",
     unit: "",
     price: "",
+    description: "",
   });
 
   // Filter only active categories and units
@@ -50,33 +69,184 @@ export default function Inventory() {
     [units]
   );
 
+  const handleFileSelect = (files: FileList | null) => {
+    if (!files) return;
+
+    const fileArray = Array.from(files);
+    const currentTotal = selectedFiles.length + existingImages.length;
+    const remainingSlots = MAX_IMAGES - currentTotal;
+    const newFiles = fileArray.slice(0, remainingSlots);
+
+    if (fileArray.length > remainingSlots) {
+      toast.warning(`Only ${MAX_IMAGES} images allowed. Some files were not added.`);
+    }
+
+    const newPreviewUrls = newFiles.map((file) => URL.createObjectURL(file));
+
+    setSelectedFiles((prev) => [...prev, ...newFiles]);
+    setPreviewUrls((prev) => [...prev, ...newPreviewUrls]);
+  };
+
+  const openFilePicker = () => {
+    // Create input outside of React's control
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.style.display = 'none';
+    document.body.appendChild(input);
+
+    input.onchange = (e) => {
+      const target = e.target as HTMLInputElement;
+      handleFileSelect(target.files);
+      // Clean up
+      document.body.removeChild(input);
+    };
+
+    // Also clean up if user cancels
+    input.addEventListener('cancel', () => {
+      document.body.removeChild(input);
+    });
+
+    input.click();
+  };
+
+  const removeFile = (index: number) => {
+    URL.revokeObjectURL(previewUrls[index]);
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+    setPreviewUrls((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const removeExistingImage = async (imageId: string) => {
+    try {
+      await deleteInventoryImage(imageId);
+      setExistingImages((prev) => prev.filter((img) => img.id !== imageId));
+      toast.success("Image removed");
+    } catch {
+      toast.error("Failed to remove image");
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({ name: "", category: "", quantity: "", unit: "", price: "", description: "" });
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    setSelectedFiles([]);
+    setPreviewUrls([]);
+    setExistingImages([]);
+    setEditingItem(null);
+  };
+
+  const handleOpenForm = async (item?: InventoryItem) => {
+    if (item) {
+      // Edit mode
+      setEditingItem(item);
+      setFormData({
+        name: item.name,
+        category: item.category,
+        quantity: item.quantity.toString(),
+        unit: item.unit,
+        price: item.price.toString(),
+        description: item.description || "",
+      });
+
+      // Load existing images
+      try {
+        const images = await fetchInventoryImages(item.id);
+        setExistingImages(images);
+      } catch {
+        setExistingImages([]);
+      }
+    } else {
+      // Add mode
+      resetForm();
+    }
+    setIsFormOpen(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+
     try {
-      await addInventoryItem({
-        name: formData.name,
-        category: formData.category,
-        quantity: Number(formData.quantity),
-        unit: formData.unit,
-        price: Number(formData.price),
-      });
-      setFormData({ name: "", category: "", quantity: "", unit: "", price: "" });
-      setIsOpen(false);
-      toast.success("Item added to inventory!");
+      if (editingItem) {
+        // Update existing item
+        await updateInventoryItem(editingItem.id, {
+          name: formData.name,
+          category: formData.category,
+          quantity: Number(formData.quantity),
+          unit: formData.unit,
+          price: Number(formData.price),
+          description: formData.description,
+        });
+
+        // Upload new images if any
+        if (selectedFiles.length > 0) {
+          await uploadInventoryImages(editingItem.id, selectedFiles);
+        }
+
+        toast.success("Item updated successfully!");
+      } else {
+        // Create new item
+        const newItem = await addInventoryItem({
+          name: formData.name,
+          category: formData.category,
+          quantity: Number(formData.quantity),
+          unit: formData.unit,
+          price: Number(formData.price),
+          description: formData.description,
+        });
+
+        // Upload images if any
+        if (selectedFiles.length > 0 && newItem) {
+          await uploadInventoryImages(newItem.id, selectedFiles);
+        }
+
+        toast.success("Item added to inventory!");
+      }
+
+      resetForm();
+      setIsFormOpen(false);
     } catch {
-      toast.error("Failed to add item");
+      toast.error(editingItem ? "Failed to update item" : "Failed to add item");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this item?")) return;
+
     try {
       await deleteInventoryItem(id);
       toast.success("Item removed from inventory");
     } catch {
       toast.error("Failed to delete item");
+    }
+  };
+
+  const handleView = async (item: InventoryItem) => {
+    setViewingItem(item);
+    setIsViewOpen(true);
+    setIsLoadingImages(true);
+
+    try {
+      const images = await fetchInventoryImages(item.id);
+      setViewingImages(images);
+    } catch {
+      toast.error("Failed to load images");
+      setViewingImages([]);
+    } finally {
+      setIsLoadingImages(false);
+    }
+  };
+
+  const handleDeleteViewImage = async (imageId: string) => {
+    try {
+      await deleteInventoryImage(imageId);
+      setViewingImages((prev) => prev.filter((img) => img.id !== imageId));
+      toast.success("Image deleted");
+    } catch {
+      toast.error("Failed to delete image");
     }
   };
 
@@ -96,7 +266,6 @@ export default function Inventory() {
   const endIndex = startIndex + itemsPerPage;
   const paginatedInventory = filteredInventory.slice(startIndex, endIndex);
 
-  // Reset to page 1 when search changes or items per page changes
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     setCurrentPage(1);
@@ -111,6 +280,8 @@ export default function Inventory() {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
   };
 
+  const totalImagesCount = selectedFiles.length + existingImages.length;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -121,16 +292,19 @@ export default function Inventory() {
           </h1>
           <p className="text-muted-foreground mt-2">Manage your tailoring materials and supplies</p>
         </div>
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <Dialog open={isFormOpen} onOpenChange={(open) => {
+          setIsFormOpen(open);
+          if (!open) resetForm();
+        }}>
           <DialogTrigger asChild>
-            <Button className="shadow-lg">
+            <Button className="shadow-lg" onClick={() => handleOpenForm()}>
               <Plus className="h-4 w-4 mr-2" />
               Add Item
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Add New Inventory Item</DialogTitle>
+              <DialogTitle>{editingItem ? "Edit Inventory Item" : "Add New Inventory Item"}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -217,13 +391,167 @@ export default function Inventory() {
                   required
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Enter item description (optional)"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={3}
+                />
+              </div>
+
+              {/* Image Upload Section */}
+              <div className="space-y-2">
+                <Label>Images (max {MAX_IMAGES})</Label>
+                <div className="border-2 border-dashed rounded-lg p-4">
+
+                  {/* Existing Images */}
+                  {existingImages.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-xs text-muted-foreground mb-2">Current Images</p>
+                      <div className="grid grid-cols-5 gap-2">
+                        {existingImages.map((image) => (
+                          <div key={image.id} className="relative group">
+                            <img
+                              src={image.url}
+                              alt={image.filename}
+                              className="w-full h-16 object-cover rounded-md border"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeExistingImage(image.id)}
+                              className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* New Images Preview */}
+                  {previewUrls.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-xs text-muted-foreground mb-2">New Images</p>
+                      <div className="grid grid-cols-5 gap-2">
+                        {previewUrls.map((url, index) => (
+                          <div key={index} className="relative group">
+                            <img
+                              src={url}
+                              alt={`Preview ${index + 1}`}
+                              className="w-full h-16 object-cover rounded-md"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeFile(index)}
+                              className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {totalImagesCount < MAX_IMAGES && (
+                    <button
+                      type="button"
+                      onClick={openFilePicker}
+                      className="flex flex-col items-center justify-center cursor-pointer py-2 text-muted-foreground hover:text-foreground transition-colors w-full"
+                    >
+                      <Upload className="h-6 w-6 mb-1" />
+                      <span className="text-sm">Click to upload images</span>
+                      <span className="text-xs">({totalImagesCount}/{MAX_IMAGES} total)</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? "Adding..." : "Add Item"}
+                {isSubmitting ? (editingItem ? "Updating..." : "Adding...") : (editingItem ? "Update Item" : "Add Item")}
               </Button>
             </form>
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* View Item Dialog */}
+      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>View Item Details</DialogTitle>
+          </DialogHeader>
+          {viewingItem && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">Item Name</Label>
+                  <p className="font-medium">{viewingItem.name}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Category</Label>
+                  <p className="font-medium">{viewingItem.category}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Quantity</Label>
+                  <p className="font-medium">{viewingItem.quantity} {viewingItem.unit}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Price per Unit</Label>
+                  <p className="font-medium">₱{viewingItem.price}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Total Value</Label>
+                  <p className="font-medium text-primary">₱{(viewingItem.quantity * viewingItem.price).toLocaleString()}</p>
+                </div>
+              </div>
+
+              {viewingItem.description && (
+                <div>
+                  <Label className="text-muted-foreground">Description</Label>
+                  <p className="mt-1 text-sm whitespace-pre-wrap">{viewingItem.description}</p>
+                </div>
+              )}
+
+              <div className="border-t pt-4">
+                <Label className="text-muted-foreground">Images</Label>
+                {isLoadingImages ? (
+                  <div className="flex items-center justify-center py-8 text-muted-foreground">
+                    Loading images...
+                  </div>
+                ) : viewingImages.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-3 mt-2">
+                    {viewingImages.map((image) => (
+                      <div key={image.id} className="relative group">
+                        <img
+                          src={image.url}
+                          alt={image.filename}
+                          className="w-full h-32 object-cover rounded-lg border"
+                        />
+                        <button
+                          onClick={() => handleDeleteViewImage(image.id)}
+                          className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                    <ImageIcon className="h-12 w-12 mb-2" />
+                    <p>No images uploaded</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Inventory Table */}
       <Card className="shadow-card">
@@ -249,6 +577,7 @@ export default function Inventory() {
                 <TableHead>Item Name</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Quantity</TableHead>
+                <TableHead>Unit</TableHead>
                 <TableHead>Price/Unit</TableHead>
                 <TableHead>Total Value</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -257,13 +586,13 @@ export default function Inventory() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     Loading inventory...
                   </TableCell>
                 </TableRow>
               ) : error ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-destructive">
+                  <TableCell colSpan={7} className="text-center py-8 text-destructive">
                     {error}
                   </TableCell>
                 </TableRow>
@@ -272,22 +601,35 @@ export default function Inventory() {
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell>{item.category}</TableCell>
-                    <TableCell>
-                      {item.quantity} {item.unit}
-                    </TableCell>
+                    <TableCell>{item.quantity}</TableCell>
+                    <TableCell>{item.unit}</TableCell>
                     <TableCell>₱{item.price}</TableCell>
                     <TableCell className="font-semibold text-primary">
                       ₱{(item.quantity * item.price).toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="icon">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleView(item)}
+                          title="View"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleOpenForm(item)}
+                          title="Edit"
+                        >
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => handleDelete(item.id)}
+                          title="Delete"
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -297,7 +639,7 @@ export default function Inventory() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     No items found
                   </TableCell>
                 </TableRow>

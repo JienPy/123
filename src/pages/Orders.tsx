@@ -25,83 +25,83 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  ShoppingCart,
-  Eye,
+  ClipboardList,
   Search,
-  DollarSign,
-  TrendingUp,
-  Package,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Eye,
+  Package,
   User,
   MapPin,
   CreditCard,
+  FileText,
   Clock,
+  X,
+  Truck,
+  CheckCircle,
 } from "lucide-react";
-import { useData, Order } from "@/contexts/DataContext";
-import { formatPaymentMethod } from "@/services/orders";
+import { toast } from "sonner";
+import { useData, Order, OrderStatus } from "@/contexts/DataContext";
+import { getStatusInfo, getNextStatusAction, formatPaymentMethod } from "@/services/orders";
 
 const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50];
 
-export default function Sales() {
-  const { orders } = useData();
+const STATUS_TABS: { value: OrderStatus | 'all'; label: string }[] = [
+  { value: 'all', label: 'All Orders' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'processed', label: 'Processed' },
+  { value: 'on_delivery', label: 'On Delivery' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
+export default function Orders() {
+  const { orders, updateOrderStatus, refreshOrders, isLoading, error } = useData();
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  // Get only completed orders (these are the sales)
-  const completedOrders = useMemo(() => {
-    return orders.filter(order => order.status === 'completed');
-  }, [orders]);
+  // Filter orders
+  const filteredOrders = useMemo(() => {
+    let filtered = orders;
 
-  // Filter completed orders
-  const filteredSales = useMemo(() => {
-    if (!searchQuery) return completedOrders;
-    const query = searchQuery.toLowerCase();
-    return completedOrders.filter(order =>
-      order.customer_name.toLowerCase().includes(query) ||
-      order.customer_email.toLowerCase().includes(query) ||
-      order.id.toString().includes(query)
-    );
-  }, [searchQuery, completedOrders]);
+    // Filter by status
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(order => order.status === statusFilter);
+    }
+
+    // Filter by search
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(order =>
+        order.id.toString().includes(query) ||
+        order.customer_name.toLowerCase().includes(query) ||
+        order.customer_email.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [orders, statusFilter, searchQuery]);
 
   // Pagination
-  const totalItems = filteredSales.length;
+  const totalItems = filteredOrders.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedSales = filteredSales.slice(startIndex, startIndex + itemsPerPage);
-
-  // Calculate stats
-  const totalRevenue = completedOrders.reduce(
-    (sum, order) => sum + parseFloat(order.total_amount || '0'),
-    0
-  );
-
-  const totalOrders = completedOrders.length;
-
-  const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-
-  // Get this month's sales
-  const thisMonth = new Date();
-  thisMonth.setDate(1);
-  thisMonth.setHours(0, 0, 0, 0);
-
-  const thisMonthSales = completedOrders.filter(order => {
-    const orderDate = new Date(order.date_created);
-    return orderDate >= thisMonth;
-  });
-
-  const thisMonthRevenue = thisMonthSales.reduce(
-    (sum, order) => sum + parseFloat(order.total_amount || '0'),
-    0
-  );
+  const paginatedOrders = filteredOrders.slice(startIndex, startIndex + itemsPerPage);
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
+    setCurrentPage(1);
+  };
+
+  const handleStatusFilterChange = (value: OrderStatus | 'all') => {
+    setStatusFilter(value);
     setCurrentPage(1);
   };
 
@@ -119,15 +119,42 @@ export default function Sales() {
     setIsDetailOpen(true);
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+  const handleStatusUpdate = async (orderId: number, newStatus: OrderStatus) => {
+    setIsUpdating(true);
+    try {
+      await updateOrderStatus(orderId, newStatus);
+      toast.success(`Order status updated to ${getStatusInfo(newStatus).label}`);
+
+      // Update selected order if viewing
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder({ ...selectedOrder, status: newStatus });
+      }
+    } catch {
+      toast.error("Failed to update order status");
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const formatDateTime = (dateString: string) => {
+  const handleCancelOrder = async (orderId: number) => {
+    if (!confirm("Are you sure you want to cancel this order?")) return;
+
+    setIsUpdating(true);
+    try {
+      await updateOrderStatus(orderId, 'cancelled');
+      toast.success("Order cancelled");
+
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder({ ...selectedOrder, status: 'cancelled' });
+      }
+    } catch {
+      toast.error("Failed to cancel order");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -137,87 +164,50 @@ export default function Sales() {
     });
   };
 
+  const StatusBadge = ({ status }: { status: OrderStatus }) => {
+    const info = getStatusInfo(status);
+    return (
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${info.bgColor} ${info.color}`}>
+        {info.label}
+      </span>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
-          Sales
+          Orders
         </h1>
-        <p className="text-muted-foreground mt-2">
-          View completed orders and revenue statistics
-        </p>
+        <p className="text-muted-foreground mt-2">Manage customer orders and track deliveries</p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="shadow-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Revenue
-            </CardTitle>
-            <div className="p-2 rounded-lg gradient-primary">
-              <DollarSign className="h-4 w-4 text-white" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">₱{totalRevenue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground mt-1">from all completed orders</p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              This Month
-            </CardTitle>
-            <div className="p-2 rounded-lg gradient-accent">
-              <TrendingUp className="h-4 w-4 text-white" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">₱{thisMonthRevenue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground mt-1">{thisMonthSales.length} orders</p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Orders
-            </CardTitle>
-            <div className="p-2 rounded-lg gradient-primary">
-              <ShoppingCart className="h-4 w-4 text-white" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">{totalOrders}</div>
-            <p className="text-xs text-muted-foreground mt-1">completed orders</p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Avg. Order Value
-            </CardTitle>
-            <div className="p-2 rounded-lg gradient-accent">
-              <Package className="h-4 w-4 text-white" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">₱{averageOrderValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-            <p className="text-xs text-muted-foreground mt-1">per order</p>
-          </CardContent>
-        </Card>
+      {/* Status Tabs */}
+      <div className="flex flex-wrap gap-2">
+        {STATUS_TABS.map((tab) => (
+          <Button
+            key={tab.value}
+            variant={statusFilter === tab.value ? "default" : "outline"}
+            size="sm"
+            onClick={() => handleStatusFilterChange(tab.value)}
+          >
+            {tab.label}
+            {tab.value !== 'all' && (
+              <span className="ml-1.5 bg-background/20 px-1.5 py-0.5 rounded text-xs">
+                {orders.filter(o => o.status === tab.value).length}
+              </span>
+            )}
+          </Button>
+        ))}
       </div>
 
-      {/* Sales Table */}
+      {/* Orders Table */}
       <Card className="shadow-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <ShoppingCart className="h-5 w-5 text-primary" />
-            Completed Orders
+            <ClipboardList className="h-5 w-5 text-primary" />
+            {statusFilter === 'all' ? 'All Orders' : STATUS_TABS.find(t => t.value === statusFilter)?.label}
           </CardTitle>
           <div className="relative mt-4">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -236,17 +226,29 @@ export default function Sales() {
                 <TableHead>Order ID</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Items</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Payment</TableHead>
+                <TableHead>Total</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedSales.length > 0 ? (
-                paginatedSales.map((order) => (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    Loading orders...
+                  </TableCell>
+                </TableRow>
+              ) : error ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-destructive">
+                    {error}
+                  </TableCell>
+                </TableRow>
+              ) : paginatedOrders.length > 0 ? (
+                paginatedOrders.map((order) => (
                   <TableRow key={order.id}>
-                    <TableCell className="font-mono font-medium">#{order.id}</TableCell>
+                    <TableCell className="font-medium">#{order.id}</TableCell>
                     <TableCell>
                       <div>
                         <p className="font-medium">{order.customer_name}</p>
@@ -260,27 +262,42 @@ export default function Sales() {
                       ₱{parseFloat(order.total_amount).toLocaleString()}
                     </TableCell>
                     <TableCell>
-                      <span className="text-sm">{formatPaymentMethod(order.payment_method)}</span>
+                      <StatusBadge status={order.status} />
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDate(order.date_created)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleViewOrder(order)}
-                        title="View Details"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleViewOrder(order)}
+                          title="View Details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        {getNextStatusAction(order.status) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const action = getNextStatusAction(order.status);
+                              if (action) handleStatusUpdate(order.id, action.nextStatus);
+                            }}
+                            disabled={isUpdating}
+                          >
+                            {getNextStatusAction(order.status)?.label}
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    {completedOrders.length === 0 ? "No completed orders yet" : "No orders found"}
+                    No orders found
                   </TableCell>
                 </TableRow>
               )}
@@ -288,7 +305,7 @@ export default function Sales() {
           </Table>
 
           {/* Pagination */}
-          {totalItems > 0 && (
+          {!isLoading && !error && totalItems > 0 && (
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>Showing</span>
@@ -312,7 +329,7 @@ export default function Sales() {
 
               <div className="flex items-center gap-1">
                 <span className="text-sm text-muted-foreground mr-2">
-                  Page {currentPage} of {totalPages || 1}
+                  Page {currentPage} of {totalPages}
                 </span>
                 <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(1)} disabled={currentPage === 1}>
                   <ChevronsLeft className="h-4 w-4" />
@@ -320,10 +337,10 @@ export default function Sales() {
                 <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}>
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || totalPages === 0}>
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages}>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(totalPages)} disabled={currentPage === totalPages || totalPages === 0}>
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(totalPages)} disabled={currentPage === totalPages}>
                   <ChevronsRight className="h-4 w-4" />
                 </Button>
               </div>
@@ -338,18 +355,16 @@ export default function Sales() {
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>Order #{selectedOrder?.id}</span>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-300">
-                Completed
-              </span>
+              {selectedOrder && <StatusBadge status={selectedOrder.status} />}
             </DialogTitle>
           </DialogHeader>
 
           {selectedOrder && (
             <div className="space-y-6">
-              {/* Order Date */}
+              {/* Order Info */}
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Clock className="h-4 w-4" />
-                {formatDateTime(selectedOrder.date_created)}
+                {formatDate(selectedOrder.date_created)}
               </div>
 
               {/* Customer Info */}
@@ -378,9 +393,10 @@ export default function Sales() {
               <div className="space-y-2">
                 <h3 className="font-semibold flex items-center gap-2">
                   <MapPin className="h-4 w-4" />
-                  Shipping Address
+                  Shipping Information
                 </h3>
                 <div className="pl-6">
+                  <Label className="text-muted-foreground">Address</Label>
                   <p className="font-medium">{selectedOrder.shipping_address}</p>
                 </div>
               </div>
@@ -444,11 +460,43 @@ export default function Sales() {
 
               {/* Notes */}
               {selectedOrder.notes && (
-                <div className="space-y-2 border-t pt-4">
-                  <Label className="text-muted-foreground">Customer Notes</Label>
-                  <p className="text-sm">{selectedOrder.notes}</p>
+                <div className="space-y-2">
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Notes
+                  </h3>
+                  <p className="pl-6 text-sm text-muted-foreground">{selectedOrder.notes}</p>
                 </div>
               )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-4 border-t">
+                {getNextStatusAction(selectedOrder.status) && (
+                  <Button
+                    onClick={() => {
+                      const action = getNextStatusAction(selectedOrder.status);
+                      if (action) handleStatusUpdate(selectedOrder.id, action.nextStatus);
+                    }}
+                    disabled={isUpdating}
+                    className="flex-1"
+                  >
+                    {selectedOrder.status === 'pending' && <Package className="h-4 w-4 mr-2" />}
+                    {selectedOrder.status === 'processed' && <Truck className="h-4 w-4 mr-2" />}
+                    {selectedOrder.status === 'on_delivery' && <CheckCircle className="h-4 w-4 mr-2" />}
+                    {getNextStatusAction(selectedOrder.status)?.label}
+                  </Button>
+                )}
+                {selectedOrder.status !== 'completed' && selectedOrder.status !== 'cancelled' && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => handleCancelOrder(selectedOrder.id)}
+                    disabled={isUpdating}
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Cancel Order
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </DialogContent>

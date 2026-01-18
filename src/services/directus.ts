@@ -33,6 +33,7 @@ export interface InventoryItem {
   quantity: number;
   unit: string;
   price: number;
+  description: string;
 }
 
 let accessToken: string | null = null;
@@ -70,6 +71,7 @@ function mapFromDirectus(item: DirectusInventoryItem): InventoryItem {
     quantity: item.quantity,
     unit: item.unit || 'pieces',
     price: parseFloat(item.price) || 0,
+    description: item.description || '',
   };
 }
 
@@ -80,6 +82,7 @@ function mapToDirectus(item: Omit<InventoryItem, 'id'>): Partial<DirectusInvento
     quantity: item.quantity,
     unit: item.unit,
     price: item.price.toString(),
+    description: item.description || null,
     status: 'in_stock',
   };
 }
@@ -126,6 +129,7 @@ export async function updateInventoryItem(id: string, item: Partial<InventoryIte
   if (item.quantity !== undefined) updateData.quantity = item.quantity;
   if (item.unit !== undefined) updateData.unit = item.unit;
   if (item.price !== undefined) updateData.price = item.price.toString();
+  if (item.description !== undefined) updateData.description = item.description || null;
 
   const response = await fetch(`${DIRECTUS_URL}/items/inventory/${id}`, {
     method: 'PATCH',
@@ -348,4 +352,132 @@ export async function deleteUnit(id: string): Promise<void> {
   if (!response.ok) {
     throw new Error('Failed to delete unit');
   }
+}
+
+// ============ Inventory Images API ============
+
+export interface InventoryImage {
+  id: string;
+  inventoryId: string;
+  fileId: string;
+  url: string;
+  filename: string;
+}
+
+interface DirectusFile {
+  id: string;
+  filename_download: string;
+  title: string | null;
+  type: string;
+}
+
+interface DirectusInventoryImage {
+  id: number;
+  inventory_id: number;
+  directus_files_id: string | DirectusFile;
+  date_created: string | null;
+}
+
+export function getFileUrl(fileId: string): string {
+  return `${DIRECTUS_URL}/assets/${fileId}`;
+}
+
+export async function uploadFile(file: File): Promise<string> {
+  const token = await getToken();
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${DIRECTUS_URL}/files`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to upload file');
+  }
+
+  const data = await response.json();
+  return data.data.id;
+}
+
+export async function createInventoryImage(inventoryId: string, fileId: string): Promise<InventoryImage> {
+  const token = await getToken();
+  const response = await fetch(`${DIRECTUS_URL}/items/inventory_images`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      inventory_id: parseInt(inventoryId),
+      directus_files_id: fileId,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to create inventory image');
+  }
+
+  const data = await response.json();
+  return {
+    id: data.data.id.toString(),
+    inventoryId: data.data.inventory_id.toString(),
+    fileId: fileId,
+    url: getFileUrl(fileId),
+    filename: '',
+  };
+}
+
+export async function fetchInventoryImages(inventoryId: string): Promise<InventoryImage[]> {
+  const token = await getToken();
+  const response = await fetch(
+    `${DIRECTUS_URL}/items/inventory_images?filter[inventory_id][_eq]=${inventoryId}&fields=*,directus_files_id.*`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch inventory images');
+  }
+
+  const data = await response.json();
+  return data.data.map((item: DirectusInventoryImage) => {
+    const file = item.directus_files_id as DirectusFile;
+    return {
+      id: item.id.toString(),
+      inventoryId: item.inventory_id.toString(),
+      fileId: typeof item.directus_files_id === 'string' ? item.directus_files_id : file.id,
+      url: getFileUrl(typeof item.directus_files_id === 'string' ? item.directus_files_id : file.id),
+      filename: typeof item.directus_files_id === 'string' ? '' : file.filename_download,
+    };
+  });
+}
+
+export async function deleteInventoryImage(id: string): Promise<void> {
+  const token = await getToken();
+  const response = await fetch(`${DIRECTUS_URL}/items/inventory_images/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to delete inventory image');
+  }
+}
+
+export async function uploadInventoryImages(inventoryId: string, files: File[]): Promise<InventoryImage[]> {
+  const images: InventoryImage[] = [];
+
+  for (const file of files) {
+    const fileId = await uploadFile(file);
+    const image = await createInventoryImage(inventoryId, fileId);
+    image.filename = file.name;
+    images.push(image);
+  }
+
+  return images;
 }
