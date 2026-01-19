@@ -1,0 +1,56 @@
+version: '3.8'
+services:
+  directus:
+    image: directus/directus:latest
+    ports:
+      - "8055:8055"
+    volumes:
+      - ./uploads:/directus/uploads
+      - ./extensions:/directus/extensions
+      - ./database:/directus/database
+    environment:
+      # Database configuration
+      DB_CLIENT: 'pg'
+      DB_HOST: 'db'
+      DB_PORT: '5432'
+      DB_DATABASE: 'directus'
+      DB_USER: 'directus'
+      DB_PASSWORD: 'directus123'
+      
+      # Directus configuration
+      KEY: 'your-secret-key-change-this'
+      SECRET: 'your-secret-change-this-too'
+      
+      # Project owner configuration (ADD THESE LINES)
+      PROJECT_OWNER_EMAIL: 'admin@example.com'
+      PROJECT_OWNER_FOREGROUND: 'personal-project'  # or 'commercial-project', 'evaluation'
+      
+      # Admin user
+      ADMIN_EMAIL: 'admin@example.com'
+      ADMIN_PASSWORD: 'admin123'
+      
+      # Optional settings
+      PUBLIC_URL: 'http://localhost:8055'
+      CORS_ENABLED: 'true'
+      CORS_ORIGIN: 'true'
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: 'directus'
+      POSTGRES_PASSWORD: 'directus123'
+      POSTGRES_DB: 'directus'
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  uploads:
+  extensions:
+  database:
