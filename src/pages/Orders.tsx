@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useData, Order, OrderStatus } from "@/contexts/DataContext";
-import { getStatusInfo, getNextStatusAction, formatPaymentMethod } from "@/services/orders";
+import { getStatusInfo, getNextStatusAction, formatPaymentMethod, fetchOrder } from "@/services/orders";
 
 const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50];
 
@@ -114,9 +114,16 @@ export default function Orders() {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
   };
 
-  const handleViewOrder = (order: Order) => {
+  const handleViewOrder = async (order: Order) => {
     setSelectedOrder(order);
     setIsDetailOpen(true);
+    // Load full order with items
+    try {
+      const fullOrder = await fetchOrder(order.id);
+      setSelectedOrder(fullOrder);
+    } catch (err) {
+      console.error('Failed to load order items:', err);
+    }
   };
 
   const handleStatusUpdate = async (orderId: number, newStatus: OrderStatus) => {

@@ -30,7 +30,7 @@ services:
       ADMIN_PASSWORD: 'admin123'
       
       # Optional settings
-      PUBLIC_URL: 'http://192.168.18.62:8055'
+      PUBLIC_URL: 'http://localhost:8055'
       CORS_ENABLED: 'true'
       CORS_ORIGIN: '*'
     depends_on:

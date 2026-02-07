@@ -1,4 +1,4 @@
-const DIRECTUS_URL = 'http://localhost:8055';
+const DIRECTUS_URL = '';
 
 // Re-use auth from directus.ts
 let accessToken: string | null = null;
@@ -89,7 +89,7 @@ export async function fetchOrders(filters?: OrderFilters): Promise<Order[]> {
 
   const params = new URLSearchParams();
   params.append('sort', '-date_created');
-  params.append('fields', '*,items.*');
+  params.append('fields', '*');
 
   if (filters?.status && filters.status !== 'all') {
     params.append('filter[status][_eq]', filters.status);
@@ -211,7 +211,7 @@ export async function fetchCompletedOrders(): Promise<Order[]> {
   const token = await getToken();
 
   const response = await fetch(
-    `${DIRECTUS_URL}/items/orders?filter[status][_eq]=completed&sort=-date_created&fields=*,items.*`,
+    `${DIRECTUS_URL}/items/orders?filter[status][_eq]=completed&sort=-date_created&fields=*`,
     {
       headers: { Authorization: `Bearer ${token}` },
     }

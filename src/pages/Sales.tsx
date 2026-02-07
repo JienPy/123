@@ -41,7 +41,7 @@ import {
   Clock,
 } from "lucide-react";
 import { useData, Order } from "@/contexts/DataContext";
-import { formatPaymentMethod } from "@/services/orders";
+import { formatPaymentMethod, fetchOrder } from "@/services/orders";
 
 const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50];
 
@@ -114,9 +114,15 @@ export default function Sales() {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
   };
 
-  const handleViewOrder = (order: Order) => {
+  const handleViewOrder = async (order: Order) => {
     setSelectedOrder(order);
     setIsDetailOpen(true);
+    try {
+      const fullOrder = await fetchOrder(order.id);
+      setSelectedOrder(fullOrder);
+    } catch (err) {
+      console.error('Failed to load order items:', err);
+    }
   };
 
   const formatDate = (dateString: string) => {

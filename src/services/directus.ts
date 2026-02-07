@@ -1,4 +1,4 @@
-const DIRECTUS_URL = 'http://localhost:8055';
+const DIRECTUS_URL = '';
 
 interface AuthResponse {
   data: {
