@@ -1,8 +1,10 @@
-import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { Home, Package, ClipboardList, ShoppingCart, Scissors, Settings, Tag, Ruler, ChevronDown } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Home, Package, ClipboardList, ShoppingCart, Scissors, Settings, Tag, Ruler, ChevronDown, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useData } from "@/contexts/DataContext";
+import { toast } from "sonner";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -22,6 +24,8 @@ const recordManagementItems = [
 
 export function Layout({ children }: LayoutProps) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { orders, refreshOrders } = useData();
   const [isRecordManagementOpen, setIsRecordManagementOpen] = useState(
     location.pathname.startsWith("/settings")
   );
@@ -29,6 +33,43 @@ export function Layout({ children }: LayoutProps) {
   const isRecordManagementActive = recordManagementItems.some(
     (item) => location.pathname === item.href
   );
+
+  const prevOrderCountRef = useRef<number>(orders.length);
+  const [newOrderCount, setNewOrderCount] = useState(0);
+
+  // Poll for new orders every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshOrders();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [refreshOrders]);
+
+  // Detect new orders and show notification
+  useEffect(() => {
+    const pendingOrders = orders.filter(o => o.status === 'pending');
+    const currentCount = orders.length;
+
+    if (prevOrderCountRef.current > 0 && currentCount > prevOrderCountRef.current) {
+      const newCount = currentCount - prevOrderCountRef.current;
+      setNewOrderCount(prev => prev + newCount);
+
+      const latestOrder = orders[0];
+      if (latestOrder) {
+        toast.info(`New order from ${latestOrder.customer_name}`, {
+          description: `Order #${latestOrder.id} — ₱${parseFloat(latestOrder.total_amount).toLocaleString()}`,
+          action: {
+            label: "View",
+            onClick: () => navigate("/orders"),
+          },
+          duration: 8000,
+        });
+      }
+    }
+
+    prevOrderCountRef.current = currentCount;
+    setNewOrderCount(pendingOrders.length);
+  }, [orders, navigate]);
 
   return (
     <div className="min-h-screen flex w-full">
@@ -118,7 +159,24 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
-        <div className="container py-8 px-6">
+        {/* Top Bar with Notification Bell */}
+        <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b">
+          <div className="container flex items-center justify-end py-3 px-6">
+            <button
+              onClick={() => navigate("/orders")}
+              className="relative p-2 rounded-lg hover:bg-muted transition-colors"
+              title="View Orders"
+            >
+              <Bell className="h-5 w-5 text-muted-foreground" />
+              {newOrderCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center animate-pulse">
+                  {newOrderCount > 9 ? '9+' : newOrderCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="container py-6 px-6">
           {children}
         </div>
       </main>

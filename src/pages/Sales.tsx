@@ -40,6 +40,21 @@ import {
   CreditCard,
   Clock,
 } from "lucide-react";
+import {
+  BarChart3,
+  Star,
+} from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+} from "recharts";
 import { useData, Order } from "@/contexts/DataContext";
 import { formatPaymentMethod, fetchOrder } from "@/services/orders";
 
@@ -99,6 +114,47 @@ export default function Sales() {
     (sum, order) => sum + parseFloat(order.total_amount || '0'),
     0
   );
+
+  // Sales by month chart data (last 6 months)
+  const monthlySalesData = useMemo(() => {
+    const months: { name: string; revenue: number; orders: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+      const monthOrders = completedOrders.filter(o => {
+        const od = new Date(o.date_created);
+        return od >= monthStart && od <= monthEnd;
+      });
+      months.push({
+        name: monthStart.toLocaleDateString('en-US', { month: 'short' }),
+        revenue: monthOrders.reduce((s, o) => s + parseFloat(o.total_amount || '0'), 0),
+        orders: monthOrders.length,
+      });
+    }
+    return months;
+  }, [completedOrders]);
+
+  // Best seller items data
+  const bestSellerData = useMemo(() => {
+    const productMap: Record<string, { name: string; totalQty: number; totalRevenue: number }> = {};
+    for (const order of orders) {
+      if (order.items) {
+        for (const item of order.items) {
+          const key = item.product_name;
+          if (!productMap[key]) {
+            productMap[key] = { name: key, totalQty: 0, totalRevenue: 0 };
+          }
+          productMap[key].totalQty += item.quantity;
+          productMap[key].totalRevenue += parseFloat(item.subtotal || '0');
+        }
+      }
+    }
+    return Object.values(productMap)
+      .sort((a, b) => b.totalQty - a.totalQty)
+      .slice(0, 8);
+  }, [orders]);
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
@@ -214,6 +270,84 @@ export default function Sales() {
           <CardContent>
             <div className="text-3xl font-bold">₱{averageOrderValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
             <p className="text-xs text-muted-foreground mt-1">per order</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Sales Trend Chart */}
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Sales Trend (Last 6 Months)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {monthlySalesData.some(d => d.revenue > 0) ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={monthlySalesData}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis dataKey="name" fontSize={12} />
+                  <YAxis fontSize={12} tickFormatter={(v) => `₱${v.toLocaleString()}`} />
+                  <Tooltip
+                    formatter={(value: number) => [`₱${value.toLocaleString()}`, 'Revenue']}
+                    labelStyle={{ fontWeight: 'bold' }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="hsl(262, 52%, 47%)"
+                    strokeWidth={3}
+                    dot={{ fill: 'hsl(262, 52%, 47%)', r: 5 }}
+                    activeDot={{ r: 7 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                No sales data yet
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Best Seller Items Chart */}
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Star className="h-5 w-5 text-accent" />
+              Best Seller Items
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {bestSellerData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={bestSellerData} layout="vertical" margin={{ left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis type="number" fontSize={12} />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    fontSize={11}
+                    width={120}
+                    tickFormatter={(v) => v.length > 15 ? v.substring(0, 15) + '...' : v}
+                  />
+                  <Tooltip
+                    formatter={(value: number, name: string) => [
+                      name === 'totalQty' ? `${value} units` : `₱${value.toLocaleString()}`,
+                      name === 'totalQty' ? 'Quantity Sold' : 'Revenue',
+                    ]}
+                  />
+                  <Bar dataKey="totalQty" fill="hsl(45, 100%, 51%)" radius={[0, 4, 4, 0]} name="totalQty" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                No order data yet
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

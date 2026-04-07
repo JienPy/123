@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useData, Order, OrderStatus } from "@/contexts/DataContext";
-import { getStatusInfo, getNextStatusAction, formatPaymentMethod, fetchOrder } from "@/services/orders";
+import { getStatusInfo, getNextStatusAction, formatPaymentMethod, fetchOrder, updateTrackingNumber } from "@/services/orders";
 
 const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50];
 
@@ -66,6 +66,7 @@ export default function Orders() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [trackingInput, setTrackingInput] = useState("");
 
   // Filter orders
   const filteredOrders = useMemo(() => {
@@ -116,13 +117,29 @@ export default function Orders() {
 
   const handleViewOrder = async (order: Order) => {
     setSelectedOrder(order);
+    setTrackingInput(order.tracking_number || "");
     setIsDetailOpen(true);
-    // Load full order with items
     try {
       const fullOrder = await fetchOrder(order.id);
       setSelectedOrder(fullOrder);
+      setTrackingInput(fullOrder.tracking_number || "");
     } catch (err) {
       console.error('Failed to load order items:', err);
+    }
+  };
+
+  const handleSaveTracking = async () => {
+    if (!selectedOrder) return;
+    setIsUpdating(true);
+    try {
+      await updateTrackingNumber(selectedOrder.id, trackingInput);
+      setSelectedOrder({ ...selectedOrder, tracking_number: trackingInput });
+      await refreshOrders();
+      toast.success("Tracking number saved");
+    } catch {
+      toast.error("Failed to save tracking number");
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -235,6 +252,7 @@ export default function Orders() {
                 <TableHead>Items</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Tracking #</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -242,13 +260,13 @@ export default function Orders() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     Loading orders...
                   </TableCell>
                 </TableRow>
               ) : error ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-destructive">
+                  <TableCell colSpan={8} className="text-center py-8 text-destructive">
                     {error}
                   </TableCell>
                 </TableRow>
@@ -270,6 +288,9 @@ export default function Orders() {
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={order.status} />
+                    </TableCell>
+                    <TableCell className="text-sm font-mono">
+                      {order.tracking_number || <span className="text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDate(order.date_created)}
@@ -303,7 +324,7 @@ export default function Orders() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     No orders found
                   </TableCell>
                 </TableRow>
@@ -416,6 +437,29 @@ export default function Orders() {
                 </h3>
                 <div className="pl-6">
                   <p className="font-medium">{formatPaymentMethod(selectedOrder.payment_method)}</p>
+                </div>
+              </div>
+
+              {/* Tracking Number */}
+              <div className="space-y-2">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Truck className="h-4 w-4" />
+                  Tracking Number
+                </h3>
+                <div className="pl-6 flex gap-2">
+                  <Input
+                    placeholder="Enter tracking number"
+                    value={trackingInput}
+                    onChange={(e) => setTrackingInput(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleSaveTracking}
+                    disabled={isUpdating || trackingInput === (selectedOrder.tracking_number || "")}
+                  >
+                    Save
+                  </Button>
                 </div>
               </div>
 

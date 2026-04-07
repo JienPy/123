@@ -63,6 +63,7 @@ export interface Order {
   total_amount: string;
   notes: string | null;
   user_id: string | null;
+  tracking_number: string | null;
   date_created: string;
   date_updated: string | null;
   items: OrderItem[];
@@ -89,7 +90,7 @@ export async function fetchOrders(filters?: OrderFilters): Promise<Order[]> {
 
   const params = new URLSearchParams();
   params.append('sort', '-date_created');
-  params.append('fields', '*');
+  params.append('fields', '*,items.*');
 
   if (filters?.status && filters.status !== 'all') {
     params.append('filter[status][_eq]', filters.status);
@@ -223,6 +224,26 @@ export async function fetchCompletedOrders(): Promise<Order[]> {
 
   const data = await response.json();
   return data.data || [];
+}
+
+export async function updateTrackingNumber(id: number, trackingNumber: string): Promise<Order> {
+  const token = await getToken();
+
+  const response = await fetch(`${DIRECTUS_URL}/items/orders/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ tracking_number: trackingNumber }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to update tracking number');
+  }
+
+  const data = await response.json();
+  return data.data;
 }
 
 // Helper function to get status display info
