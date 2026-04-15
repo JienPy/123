@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Home, Package, ClipboardList, ShoppingCart, Scissors, Settings, Tag, Ruler, ChevronDown, Bell } from "lucide-react";
+import { Home, Package, ClipboardList, ShoppingCart, Scissors, Settings, Tag, Ruler, ChevronDown, Bell, Truck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useData } from "@/contexts/DataContext";
@@ -20,6 +20,7 @@ const navigation = [
 const recordManagementItems = [
   { name: "Category Settings", href: "/settings/categories", icon: Tag },
   { name: "Unit Settings", href: "/settings/units", icon: Ruler },
+  { name: "Shipping Zones", href: "/settings/shipping-zones", icon: Truck },
 ];
 
 export function Layout({ children }: LayoutProps) {

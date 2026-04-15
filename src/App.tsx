@@ -11,6 +11,7 @@ import Orders from "./pages/Orders";
 import Sales from "./pages/Sales";
 import CategorySettings from "./pages/CategorySettings";
 import UnitSettings from "./pages/UnitSettings";
+import ShippingZoneSettings from "./pages/ShippingZoneSettings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
               <Route path="/sales" element={<Sales />} />
               <Route path="/settings/categories" element={<CategorySettings />} />
               <Route path="/settings/units" element={<UnitSettings />} />
+              <Route path="/settings/shipping-zones" element={<ShippingZoneSettings />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

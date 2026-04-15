@@ -354,6 +354,67 @@ export async function deleteUnit(id: string): Promise<void> {
   }
 }
 
+// ============ Shipping Zones API ============
+
+export interface ShippingZone {
+  id: string;
+  zone_name: string;
+  fee: number;
+  provinces: string;
+  is_default: boolean;
+  status: 'active' | 'inactive';
+}
+
+export async function fetchShippingZones(): Promise<ShippingZone[]> {
+  const token = await getToken();
+  const response = await fetch(`${DIRECTUS_URL}/items/shipping_zones`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error('Failed to fetch shipping zones');
+  const data = await response.json();
+  return (data.data || []).map((item: any) => ({
+    id: item.id.toString(),
+    zone_name: item.zone_name,
+    fee: Number(item.fee),
+    provinces: item.provinces || '',
+    is_default: !!item.is_default,
+    status: item.status as 'active' | 'inactive',
+  }));
+}
+
+export async function createShippingZone(zone: Omit<ShippingZone, 'id'>): Promise<ShippingZone> {
+  const token = await getToken();
+  const response = await fetch(`${DIRECTUS_URL}/items/shipping_zones`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(zone),
+  });
+  if (!response.ok) throw new Error('Failed to create shipping zone');
+  const data = await response.json();
+  return { ...data.data, id: data.data.id.toString(), fee: Number(data.data.fee), is_default: !!data.data.is_default };
+}
+
+export async function updateShippingZone(id: string, zone: Partial<ShippingZone>): Promise<ShippingZone> {
+  const token = await getToken();
+  const response = await fetch(`${DIRECTUS_URL}/items/shipping_zones/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(zone),
+  });
+  if (!response.ok) throw new Error('Failed to update shipping zone');
+  const data = await response.json();
+  return { ...data.data, id: data.data.id.toString(), fee: Number(data.data.fee), is_default: !!data.data.is_default };
+}
+
+export async function deleteShippingZone(id: string): Promise<void> {
+  const token = await getToken();
+  const response = await fetch(`${DIRECTUS_URL}/items/shipping_zones/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error('Failed to delete shipping zone');
+}
+
 // ============ Inventory Images API ============
 
 export interface InventoryImage {
