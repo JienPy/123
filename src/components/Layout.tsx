@@ -86,6 +86,7 @@ export function Layout({ children }: LayoutProps) {
           <nav className="flex-1 p-4 space-y-2">
             {navigation.map((item) => {
               const isActive = location.pathname === item.href;
+              const pendingCount = item.href === "/orders" ? newOrderCount : 0;
               return (
                 <Link
                   key={item.name}
@@ -98,7 +99,17 @@ export function Layout({ children }: LayoutProps) {
                   )}
                 >
                   <item.icon className="h-5 w-5" />
-                  <span className="font-medium">{item.name}</span>
+                  <span className="font-medium flex-1">{item.name}</span>
+                  {pendingCount > 0 && (
+                    <span className={cn(
+                      "min-w-[22px] h-[22px] px-1.5 rounded-full text-xs font-bold flex items-center justify-center",
+                      isActive
+                        ? "bg-primary-foreground text-primary"
+                        : "bg-red-500 text-white"
+                    )}>
+                      {pendingCount > 99 ? '99+' : pendingCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}
