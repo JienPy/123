@@ -361,6 +361,7 @@ export interface ShippingZone {
   zone_name: string;
   fee: number;
   provinces: string;
+  cities: string;
   is_default: boolean;
   status: 'active' | 'inactive';
 }
@@ -377,6 +378,7 @@ export async function fetchShippingZones(): Promise<ShippingZone[]> {
     zone_name: item.zone_name,
     fee: Number(item.fee),
     provinces: item.provinces || '',
+    cities: item.cities || '',
     is_default: !!item.is_default,
     status: item.status as 'active' | 'inactive',
   }));

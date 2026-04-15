@@ -34,6 +34,7 @@ export default function ShippingZoneSettings() {
     zone_name: "",
     fee: "",
     provinces: "",
+    cities: "",
     is_default: false,
     status: "active" as "active" | "inactive",
   });
@@ -55,7 +56,7 @@ export default function ShippingZoneSettings() {
   };
 
   const resetForm = () => {
-    setFormData({ zone_name: "", fee: "", provinces: "", is_default: false, status: "active" });
+    setFormData({ zone_name: "", fee: "", provinces: "", cities: "", is_default: false, status: "active" });
     setEditingZone(null);
   };
 
@@ -66,6 +67,7 @@ export default function ShippingZoneSettings() {
         zone_name: zone.zone_name,
         fee: zone.fee.toString(),
         provinces: zone.provinces,
+        cities: zone.cities || "",
         is_default: zone.is_default,
         status: zone.status,
       });
@@ -87,6 +89,7 @@ export default function ShippingZoneSettings() {
       zone_name: formData.zone_name,
       fee: Number(formData.fee),
       provinces: formData.provinces,
+      cities: formData.cities,
       is_default: formData.is_default,
       status: formData.status,
     };
@@ -180,6 +183,19 @@ export default function ShippingZoneSettings() {
                   Enter province names separated by commas. Leave empty if this is a default zone.
                 </p>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="cities">Cities / Municipalities (comma-separated)</Label>
+                <Textarea
+                  id="cities"
+                  placeholder="e.g., Tayabas, City of Lucena, Sariaya"
+                  value={formData.cities}
+                  onChange={(e) => setFormData({ ...formData, cities: e.target.value })}
+                  rows={2}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Cities are matched first before provinces. More specific = higher priority.
+                </p>
+              </div>
               <div className="flex items-center justify-between">
                 <div>
                   <Label>Default Zone</Label>
@@ -225,6 +241,7 @@ export default function ShippingZoneSettings() {
                 <TableHead>Zone</TableHead>
                 <TableHead>Fee</TableHead>
                 <TableHead>Provinces</TableHead>
+                <TableHead>Cities</TableHead>
                 <TableHead>Default</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -233,15 +250,18 @@ export default function ShippingZoneSettings() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Loading...</TableCell>
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell>
                 </TableRow>
               ) : zones.length > 0 ? (
                 zones.map((zone) => (
                   <TableRow key={zone.id}>
                     <TableCell className="font-medium">{zone.zone_name}</TableCell>
                     <TableCell className="font-semibold text-primary">₱{zone.fee.toLocaleString()}</TableCell>
-                    <TableCell className="text-muted-foreground max-w-[300px] truncate">
-                      {zone.provinces || <span className="italic">All (catch-all)</span>}
+                    <TableCell className="text-muted-foreground max-w-[200px] truncate">
+                      {zone.provinces || <span className="italic">—</span>}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground max-w-[200px] truncate">
+                      {zone.cities || <span className="italic">—</span>}
                     </TableCell>
                     <TableCell>
                       {zone.is_default && (
@@ -271,7 +291,7 @@ export default function ShippingZoneSettings() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No shipping zones found</TableCell>
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No shipping zones found</TableCell>
                 </TableRow>
               )}
             </TableBody>
