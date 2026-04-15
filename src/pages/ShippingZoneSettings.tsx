@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -14,7 +13,13 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Plus, Edit, Trash2, Truck } from "lucide-react";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from "@/components/ui/command";
+import { Plus, Edit, Trash2, Truck, ChevronDown, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchShippingZones,
@@ -23,6 +28,121 @@ import {
   deleteShippingZone,
   ShippingZone,
 } from "@/services/directus";
+import {
+  getProvinces,
+  getCitiesForProvince,
+  Province,
+  CityMunicipality,
+} from "@/services/psgcApi";
+
+// ─── MultiSelect Combobox ────────────────────────────────────────────────────
+
+interface Option { code: string; name: string; }
+
+function MultiSelectCombobox({
+  label,
+  placeholder,
+  options,
+  selected,
+  loading,
+  disabled,
+  onAdd,
+  onRemove,
+}: {
+  label: string;
+  placeholder: string;
+  options: Option[];
+  selected: string[];
+  loading?: boolean;
+  disabled?: boolean;
+  onAdd: (name: string) => void;
+  onRemove: (name: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const filtered = options.filter(
+    (o) =>
+      o.name.toLowerCase().includes(query.toLowerCase()) &&
+      !selected.includes(o.name)
+  );
+
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selected.map((name) => (
+            <span
+              key={name}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-primary/10 text-primary border border-primary/20"
+            >
+              {name}
+              <button
+                type="button"
+                onClick={() => onRemove(name)}
+                className="hover:text-destructive ml-0.5"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <Popover open={open && !disabled} onOpenChange={(o) => { if (!disabled) setOpen(o); }}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled}
+            className="w-full justify-between font-normal text-muted-foreground"
+          >
+            <span>{placeholder}</span>
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin opacity-50" />
+            ) : (
+              <ChevronDown className="h-4 w-4 opacity-50" />
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="p-0 w-[--radix-popover-trigger-width]" align="start">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder={`Search ${label.toLowerCase()}...`}
+              value={query}
+              onValueChange={setQuery}
+            />
+            <CommandList>
+              {loading ? (
+                <CommandEmpty>Loading...</CommandEmpty>
+              ) : filtered.length === 0 ? (
+                <CommandEmpty>No results found.</CommandEmpty>
+              ) : (
+                <CommandGroup>
+                  {filtered.map((option) => (
+                    <CommandItem
+                      key={option.code}
+                      value={option.name}
+                      onSelect={() => {
+                        onAdd(option.name);
+                        setQuery('');
+                        setOpen(false);
+                      }}
+                    >
+                      {option.name}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function ShippingZoneSettings() {
   const [zones, setZones] = useState<ShippingZone[]>([]);
@@ -30,14 +150,58 @@ export default function ShippingZoneSettings() {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingZone, setEditingZone] = useState<ShippingZone | null>(null);
+
+  // PSGC data
+  const [provinces, setProvinces] = useState<Province[]>([]);
+  const [loadingProvinces, setLoadingProvinces] = useState(false);
+  const [allCities, setAllCities] = useState<CityMunicipality[]>([]);
+  const [loadingCities, setLoadingCities] = useState(false);
+
+  // Multi-select state
+  const [selectedProvinces, setSelectedProvinces] = useState<string[]>([]);
+  const [selectedCities, setSelectedCities] = useState<string[]>([]);
+
   const [formData, setFormData] = useState({
     zone_name: "",
     fee: "",
-    provinces: "",
-    cities: "",
     is_default: false,
     status: "active" as "active" | "inactive",
   });
+
+  // Load provinces once on mount
+  useEffect(() => {
+    setLoadingProvinces(true);
+    getProvinces()
+      .then(setProvinces)
+      .catch(() => toast.error("Failed to load provinces"))
+      .finally(() => setLoadingProvinces(false));
+  }, []);
+
+  // Load cities whenever selected provinces change
+  useEffect(() => {
+    if (selectedProvinces.length === 0) {
+      setAllCities([]);
+      return;
+    }
+    setLoadingCities(true);
+    const codes = selectedProvinces
+      .map((name) => provinces.find((p) => p.name === name)?.code)
+      .filter(Boolean) as string[];
+
+    Promise.all(codes.map((code) => getCitiesForProvince(code)))
+      .then((results) => {
+        const combined = results.flat();
+        const seen = new Set<string>();
+        const unique = combined.filter((c) => {
+          if (seen.has(c.code)) return false;
+          seen.add(c.code);
+          return true;
+        });
+        setAllCities(unique.sort((a, b) => a.name.localeCompare(b.name)));
+      })
+      .catch(() => toast.error("Failed to load cities"))
+      .finally(() => setLoadingCities(false));
+  }, [selectedProvinces, provinces]);
 
   useEffect(() => {
     loadZones();
@@ -56,7 +220,9 @@ export default function ShippingZoneSettings() {
   };
 
   const resetForm = () => {
-    setFormData({ zone_name: "", fee: "", provinces: "", cities: "", is_default: false, status: "active" });
+    setFormData({ zone_name: "", fee: "", is_default: false, status: "active" });
+    setSelectedProvinces([]);
+    setSelectedCities([]);
     setEditingZone(null);
   };
 
@@ -66,11 +232,15 @@ export default function ShippingZoneSettings() {
       setFormData({
         zone_name: zone.zone_name,
         fee: zone.fee.toString(),
-        provinces: zone.provinces,
-        cities: zone.cities || "",
         is_default: zone.is_default,
         status: zone.status,
       });
+      setSelectedProvinces(
+        zone.provinces ? zone.provinces.split(',').map((s) => s.trim()).filter(Boolean) : []
+      );
+      setSelectedCities(
+        zone.cities ? zone.cities.split(',').map((s) => s.trim()).filter(Boolean) : []
+      );
     } else {
       resetForm();
     }
@@ -88,8 +258,8 @@ export default function ShippingZoneSettings() {
     const payload = {
       zone_name: formData.zone_name,
       fee: Number(formData.fee),
-      provinces: formData.provinces,
-      cities: formData.cities,
+      provinces: selectedProvinces.join(', '),
+      cities: selectedCities.join(', '),
       is_default: formData.is_default,
       status: formData.status,
     };
@@ -142,7 +312,7 @@ export default function ShippingZoneSettings() {
               Add Zone
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingZone ? "Edit Shipping Zone" : "Add Shipping Zone"}</DialogTitle>
             </DialogHeader>
@@ -170,32 +340,44 @@ export default function ShippingZoneSettings() {
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="provinces">Provinces (comma-separated)</Label>
-                <Textarea
-                  id="provinces"
-                  placeholder="e.g., Quezon, Batangas, Laguna"
-                  value={formData.provinces}
-                  onChange={(e) => setFormData({ ...formData, provinces: e.target.value })}
-                  rows={3}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Enter province names separated by commas. Leave empty if this is a default zone.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="cities">Cities / Municipalities (comma-separated)</Label>
-                <Textarea
-                  id="cities"
-                  placeholder="e.g., Tayabas, City of Lucena, Sariaya"
-                  value={formData.cities}
-                  onChange={(e) => setFormData({ ...formData, cities: e.target.value })}
-                  rows={2}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Cities are matched first before provinces. More specific = higher priority.
-                </p>
-              </div>
+
+              {/* Province Multi-Select */}
+              <MultiSelectCombobox
+                label="Provinces"
+                placeholder="Select province..."
+                options={provinces}
+                selected={selectedProvinces}
+                loading={loadingProvinces}
+                onAdd={(name) => setSelectedProvinces((prev) => [...prev, name])}
+                onRemove={(name) => {
+                  setSelectedProvinces((prev) => prev.filter((p) => p !== name));
+                  // Remove cities that belong to the removed province from selected
+                  // (we can't easily check this, so just keep them — they still work for matching)
+                }}
+              />
+              <p className="text-xs text-muted-foreground -mt-1">
+                Select provinces to cover. Cities below are filtered by selected province(s).
+              </p>
+
+              {/* City Multi-Select */}
+              <MultiSelectCombobox
+                label="Cities / Municipalities"
+                placeholder={
+                  selectedProvinces.length === 0
+                    ? "Select a province first"
+                    : "Select city / municipality..."
+                }
+                options={allCities}
+                selected={selectedCities}
+                loading={loadingCities}
+                disabled={selectedProvinces.length === 0}
+                onAdd={(name) => setSelectedCities((prev) => [...prev, name])}
+                onRemove={(name) => setSelectedCities((prev) => prev.filter((c) => c !== name))}
+              />
+              <p className="text-xs text-muted-foreground -mt-1">
+                Cities are matched first (higher priority than province).
+              </p>
+
               <div className="flex items-center justify-between">
                 <div>
                   <Label>Default Zone</Label>
