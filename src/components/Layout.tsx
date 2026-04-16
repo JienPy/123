@@ -80,7 +80,7 @@ export function Layout({ children }: LayoutProps) {
           {/* Logo */}
           <div className="h-16 flex items-center gap-2 px-6 border-b gradient-primary">
             <Scissors className="h-6 w-6 text-white" />
-            <span className="font-semibold text-lg text-white">TailorPro</span>
+            <span className="font-semibold text-lg text-white">ThreadSmart</span>
           </div>
 
           {/* Navigation */}
@@ -164,7 +164,7 @@ export function Layout({ children }: LayoutProps) {
 
           {/* Footer */}
           <div className="p-4 border-t text-xs text-muted-foreground text-center">
-            © 2025 TailorPro
+            © 2025 ThreadSmart
           </div>
         </div>
       </aside>
